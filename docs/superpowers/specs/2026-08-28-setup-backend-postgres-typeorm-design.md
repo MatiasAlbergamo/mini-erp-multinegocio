@@ -16,7 +16,7 @@ El proyecto completo es demasiado grande para un solo spec, así que se descompo
 
 ### Dentro
 
-1. Repositorio git inicializado como monorepo.
+1. Repositorio git inicializado como monorepo, con `.gitignore` y `.gitattributes`.
 2. Backend NestJS scaffoldeado en `backend/`.
 3. PostgreSQL local vía Docker Compose.
 4. Configuración de entorno con validación al arranque.
@@ -67,6 +67,8 @@ docker compose exec db psql -U erp -d erp -c "\d categories"
 | `synchronize: false` desde el día 1 | `synchronize: true` en desarrollo | Un solo flujo para dev y prod. `synchronize` no genera bien el índice parcial `WHERE active = true`, y la divergencia dev/prod aparece recién cuando ya es cara de arreglar. |
 | Naming strategy automática snake_case | `@Column({ name: '...' })` explícito en cada columna | Ver sección 5.4. |
 | Entidades listadas explícitamente, no por glob | Glob `dist/**/*.entity.js` | Los globs rompen en varios entornos de deploy con un error difícil de diagnosticar (`No metadata for X was found`). |
+| `timestamptz` en todas las fechas | `timestamp` sin zona | Ver sección 8.3. La decisión no es simétrica: pasar de `timestamp` a `timestamptz` con datos reales ya escritos desde dos zonas distintas es irrecuperable. |
+| Puerto host 5433 para el contenedor | 5432; o parar el servicio nativo | El 5432 ya está ocupado por PostgreSQL 18 instalado como servicio de Windows. Mapear a 5433 deja convivir a las dos instancias sin tocar la configuración de la máquina. |
 | Health endpoint propio | `@nestjs/terminus` | Quince líneas contra una dependencia. Se lee mejor en un repo de portfolio. |
 | `class-validator` para validar el `.env` | `joi` | `class-validator` ya entra por los DTOs. Dos librerías de validación en el mismo proyecto es una inconsistencia innecesaria. |
 
@@ -77,6 +79,7 @@ docker compose exec db psql -U erp -d erp -c "\d categories"
 ```
 sistemaDeGestion/
 ├─ .gitignore
+├─ .gitattributes
 ├─ README.md
 ├─ docker-compose.yml
 ├─ docs/superpowers/specs/
@@ -112,6 +115,8 @@ sistemaDeGestion/
 
 **`docker-compose.yml` va en la raíz**, no dentro de `backend/`: es infraestructura del proyecto, no del backend, y queda visible apenas alguien abre el repo.
 
+**`.gitattributes`** fija el criterio de finales de línea (`* text=auto eol=lf`, con `*.ps1` y `*.cmd` forzados a CRLF). Sin esto, el desarrollo en Windows y el deploy en Linux producen diffs fantasma de archivos enteros por un cambio de un carácter, y los scripts shell commiteados con CRLF fallan en el contenedor.
+
 **Las entidades viven en `modules/<nombre>/entities/`**, no en una carpeta común. Es la convención de NestJS y evita moverlas cuando llegue el módulo que las use. `sale` y `sale_item` van juntas en `sales/` porque `sale_item` no tiene vida propia: nunca va a existir un `SaleItemsModule`.
 
 ---
@@ -126,11 +131,13 @@ sistemaDeGestion/
 NODE_ENV=development
 PORT=3000
 DB_HOST=localhost
-DB_PORT=5432
+DB_PORT=5433
 DB_USERNAME=erp
 DB_PASSWORD=erp_local_dev
 DB_NAME=erp
 ```
+
+`DB_PORT` es **5433, no 5432**. La máquina de desarrollo tiene PostgreSQL 18 instalado como servicio de Windows (`postgresql-x64-18`) escuchando en el 5432, así que ese puerto está ocupado. Ver sección 6.
 
 No se agrega `JWT_SECRET` todavía: entra con el módulo de auth.
 
@@ -183,23 +190,44 @@ Esto no contradice el criterio de "sin magia escondida" que motivó el filtro ma
 ```yaml
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     container_name: erp-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: erp
       POSTGRES_PASSWORD: erp_local_dev
       POSTGRES_DB: erp
-    ports: ["5432:5432"]
+    ports: ["5433:5432"]
     volumes: ["erp-db-data:/var/lib/postgresql/data"]
 
 volumes:
   erp-db-data:
 ```
 
-Postgres 17 porque es lo que hoy dan por defecto Neon y Supabase: desarrollar contra la misma major que va a correr en producción evita sorpresas. Al elegir proveedor se confirma la versión exacta.
+### El puerto es 5433, no 5432
 
-El volumen con nombre hace que los datos sobrevivan a `docker compose down`. Para borrar todo y arrancar limpio: `docker compose down -v`.
+La máquina de desarrollo ya tiene PostgreSQL 18 corriendo como servicio de Windows
+(`postgresql-x64-18`), ocupando el 5432. Con el mapeo por defecto, Docker falla al arrancar
+con `port is already allocated`.
+
+Mapear a `5433:5432` deja convivir a las dos instancias sin que ninguna se entere de la
+otra: no hay que parar ni acordarse de prender ningún servicio. Dentro del contenedor
+Postgres sigue en el 5432; lo único que cambia es la puerta de entrada desde el host.
+
+La alternativa —parar el servicio de Windows— se descarta porque rompe lo que sea que ya
+esté apuntando a esa base y agrega un estado que hay que recordar cada vez.
+
+### La versión
+
+Postgres 18 para que coincida con el cliente `psql` que ya está instalado en la máquina, y
+así haya un solo número de versión en juego en vez de dos.
+
+Para lo que este proyecto usa —uuid, `decimal`, índices parciales y funcionales,
+`timestamptz`— no hay diferencias entre 17 y 18. La paridad con producción se confirma al
+elegir proveedor; si resulta ser 17, cambiar el número en el compose es un carácter.
+
+El volumen con nombre hace que los datos sobrevivan a `docker compose down`. Para borrar
+todo y arrancar limpio: `docker compose down -v`.
 
 ---
 
@@ -266,9 +294,49 @@ La aritmética de la venta (`subtotal = unitPrice * quantity`, `total = suma de 
 
 ### 8.3 Fechas
 
-Todas las columnas de fecha van en **`timestamptz`**, no `timestamp`. Guarda el instante real, así que no importa que el server de producción corra en UTC y el negocio esté en UTC-3.
+Todas las columnas de fecha van en **`timestamptz`**, no `timestamp`.
 
-Consecuencia a tener presente cuando se implemente el dashboard: el corte de "ventas del mes" hay que calcularlo convirtiendo a `America/Argentina/Buenos_Aires`, porque una venta del 31 a las 22:00 hora argentina cae el día 1 del mes siguiente en UTC. Es un problema del dashboard, no de este entregable, pero `timestamptz` es lo que permite resolverlo bien.
+Se evaluó explícitamente usar `timestamp`, con el argumento de que la aplicación solo va a
+usarse en Argentina y así se evita pensar en zonas horarias. Se descartó: `timestamptz` es
+la opción con *menos* complejidad, no con más.
+
+**Qué guarda cada uno.** `timestamptz` guarda un instante absoluto y lo convierte a la zona
+que se le pida al leer. `timestamp` guarda una lectura de reloj de pared sin ninguna
+indicación de dónde estaba ese reloj — la convención de "es hora argentina" vive en la
+cabeza del programador, no en la base, y nada la hace cumplir.
+
+**Dónde se rompe.** Node produce un instante absoluto con `new Date()`. Al escribirlo en un
+`timestamp` se le arranca la zona usando la del proceso que escribe, y las dos máquinas del
+proyecto no coinciden:
+
+| Origen | Zona del proceso | Valor guardado para una venta del 31/08 22:00 |
+|---|---|---|
+| Máquina de desarrollo | UTC-3 | `2026-08-31 22:00:00` |
+| Servidor de producción | UTC | `2026-09-01 01:00:00` |
+
+El mismo evento produce dos valores distintos en la misma columna, y ambos casos van a
+ocurrir porque se prueba local y se deploya en la nube. El dashboard de agosto pierde esa
+venta, y el frontend no tiene forma de saber qué convención aplicar (el `DatePipe` de
+Angular convierte solo si la fecha trae zona; si no, adivina).
+
+**El costo real de `timestamptz`.** La conversión aparece únicamente donde se agrupa por día
+o por mes — dos o tres consultas del dashboard — como una cláusula
+`AT TIME ZONE 'America/Argentina/Buenos_Aires'`. En el resto del sistema no se hace nada: se
+serializa como ISO con offset y Angular lo muestra en hora local solo. Con `timestamp` ese
+trabajo no desaparece, se muda: pasa de una cláusula explícita en el dashboard a una
+conversión implícita en cada lectura, sin nada que avise cuando falta.
+
+**Por qué la decisión no es simétrica.** Convertir `timestamp` → `timestamptz` más adelante
+exige declarar en qué zona estaban los valores guardados. Si unas filas se escribieron desde
+la máquina de desarrollo y otras desde producción, esa información no existe en ninguna
+parte: no hay forma de determinarla mirando la fila. Al revés no hay problema —
+`timestamptz` no ata a nada.
+
+Como nota adicional: Argentina tuvo horario de verano hasta 2009 y volver a tenerlo es una
+decisión política que puede ocurrir. `timestamptz` lo absorbe; con `timestamp` la noche del
+cambio produce una hora que ocurre dos veces, indistinguibles entre sí.
+
+Ambos tipos ocupan 8 bytes. `timestamptz` no tiene ningún costo de almacenamiento.
 
 ### 8.4 Entidades
 
@@ -417,7 +485,8 @@ La estrategia de testing del proyecto se define en el spec del MVP, cuando entre
 | TypeORM genera mal el índice parcial o el funcional | Se revisa el SQL generado; si está mal se escribe a mano con `queryRunner.query()`. El paso 7 de la verificación lo confirma contra la base real. |
 | El CLI de TypeORM y la app divergen en configuración | Una única `buildDataSourceOptions()` consumida por ambos. |
 | Docker Desktop no está corriendo al empezar a trabajar | Documentado en el README como primer paso. |
-| La versión de Postgres local difiere de la de producción | Se elige 17 por ser el default de Neon y Supabase; se confirma al momento del deploy. |
+| La versión de Postgres local difiere de la de producción | Se elige 18 por paridad con el cliente `psql` instalado. Ninguna funcionalidad del proyecto difiere entre 17 y 18; se confirma la versión de producción al elegir proveedor. |
+| El puerto 5432 del host está ocupado por el Postgres nativo | El contenedor se mapea a 5433 y el `.env` lo refleja. Si el servicio nativo se desinstala en el futuro, no hace falta cambiar nada. |
 
 ---
 
