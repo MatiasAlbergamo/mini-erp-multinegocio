@@ -20,3 +20,6 @@ npm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Artefactos de compilacion incremental de TypeScript
+*.tsbuildinfo
