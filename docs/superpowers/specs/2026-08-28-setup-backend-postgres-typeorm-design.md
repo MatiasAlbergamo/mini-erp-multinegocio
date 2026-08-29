@@ -198,11 +198,23 @@ services:
       POSTGRES_PASSWORD: erp_local_dev
       POSTGRES_DB: erp
     ports: ["5433:5432"]
-    volumes: ["erp-db-data:/var/lib/postgresql/data"]
+    volumes: ["erp-db-data:/var/lib/postgresql"]
 
 volumes:
   erp-db-data:
 ```
+
+### El montaje del volumen es `/var/lib/postgresql`, sin `/data`
+
+PostgreSQL 18 cambió la convención de la imagen oficial. Hasta la 17, el volumen se montaba
+en `/var/lib/postgresql/data` — el path que aparece en casi toda la documentación y los
+tutoriales. Desde la 18, la imagen espera **un único montaje en `/var/lib/postgresql`** y
+crea adentro un subdirectorio por versión mayor, para permitir `pg_upgrade --link` sin
+cruzar el borde del montaje.
+
+Con el path viejo, el contenedor detecta la incompatibilidad y se niega a arrancar. Si
+además tiene `restart: unless-stopped`, entra en un loop de reinicio en el que
+`docker compose ps` lo muestra como `Up` durante fracciones de segundo.
 
 ### El puerto es 5433, no 5432
 

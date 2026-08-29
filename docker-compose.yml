@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:18-alpine
+    container_name: erp-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: erp
+      POSTGRES_PASSWORD: erp_local_dev
+      POSTGRES_DB: erp
+    # 5433 en el host: el 5432 lo ocupa el PostgreSQL nativo de Windows.
+    ports: ["5433:5432"]
+    # Postgres 18+ espera UN montaje en /var/lib/postgresql y crea adentro un
+    # subdirectorio por version mayor. El path clasico /var/lib/postgresql/data
+    # (valido hasta la 17) hace que la imagen se niegue a arrancar.
+    volumes: ["erp-db-data:/var/lib/postgresql"]
+
+volumes:
+  erp-db-data:
