@@ -4,6 +4,7 @@ import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 
 import { Business } from '../modules/businesses/entities/business.entity';
 import { Category } from '../modules/categories/entities/category.entity';
+import { Product } from '../modules/products/entities/product.entity';
 import { EnvVars, NodeEnv } from './env.validation';
 
 /**
@@ -26,7 +27,7 @@ export function buildDataSourceOptions(env: EnvVars): DataSourceOptions {
 
     // Explicitas, nunca por glob: los globs rompen en deploy con un
     // "No metadata for X was found" dificil de diagnosticar.
-    entities: [Business, Category],
+    entities: [Business, Category, Product],
 
     // Aca si va glob: se agregan archivos todo el tiempo, y el patron
     // con las dos extensiones funciona igual desde src/ que desde dist/.
