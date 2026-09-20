@@ -95,7 +95,10 @@ services:
       POSTGRES_DB: erp
     # 5433 en el host: el 5432 lo ocupa el PostgreSQL nativo de Windows.
     ports: ["5433:5432"]
-    volumes: ["erp-db-data:/var/lib/postgresql/data"]
+    # Postgres 18+ espera UN montaje en /var/lib/postgresql y crea adentro un
+    # subdirectorio por version mayor. El path clasico /var/lib/postgresql/data
+    # (valido hasta la 17) hace que la imagen se niegue a arrancar.
+    volumes: ["erp-db-data:/var/lib/postgresql"]
 
 volumes:
   erp-db-data:
@@ -125,7 +128,11 @@ Esperado: una línea que empieza con `PostgreSQL 18.` — confirma que el conten
 docker compose ps
 ```
 
-Esperado: la columna `PORTS` muestra `0.0.0.0:5433->5432/tcp`. Si en lugar de eso el comando del paso 3 falló con `port is already allocated`, el mapeo quedó en 5432 — revisar el `docker-compose.yml`.
+Esperado: la columna `PORTS` muestra `0.0.0.0:5433->5432/tcp`, y `STATUS` dice `Up N seconds` con N creciendo entre corridas del comando.
+
+Si `STATUS` muestra `Up Less than a second` cada vez, el contenedor está en loop de reinicio: leer `docker compose logs db`. La causa más probable es el montaje del volumen (ver el comentario en el `docker-compose.yml`).
+
+Si el paso 3 falló con `port is already allocated`, el mapeo quedó en 5432 — revisar el `docker-compose.yml`.
 
 - [ ] **Step 6: Commit**
 

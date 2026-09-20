@@ -1,0 +1,15 @@
+# Normaliza a LF en el repositorio; cada checkout usa lo que corresponda al SO.
+* text=auto eol=lf
+
+# Scripts de Windows: tienen que quedar en CRLF o el shell los rechaza.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binarios: git no los debe tocar nunca.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
