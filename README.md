@@ -71,5 +71,5 @@ npm run typeorm -- schema:log
 
 ## Documentación
 
-- Diseño: [`docs/superpowers/specs/`](docs/superpowers/specs/)
-- Planes de implementación: [`docs/superpowers/plans/`](docs/superpowers/plans/)
+Cada tramo del proyecto tiene un documento de diseño en [`docs/design/`](docs/design/)
+con las decisiones tomadas y su justificación.

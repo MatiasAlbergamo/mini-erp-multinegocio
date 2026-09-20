@@ -23,3 +23,6 @@ Thumbs.db
 
 # Artefactos de compilacion incremental de TypeScript
 *.tsbuildinfo
+
+# Documentos de trabajo de la herramienta de planificacion (specs van a docs/design/)
+docs/superpowers/
